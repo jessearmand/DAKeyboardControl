@@ -8,7 +8,7 @@
 
 #import "DAKeyboardControl.h"
 #import <objc/runtime.h>
-
+#import <ReactiveCocoa/ReactiveCocoa.h>
 
 static inline UIViewAnimationOptions AnimationOptionsForCurve(UIViewAnimationCurve curve)
 {
@@ -133,6 +133,32 @@ static char UIViewKeyboardPanRecognizer;
         [self.keyboardPanRecognizer setDelegate:self];
         [self addGestureRecognizer:self.keyboardPanRecognizer];
     }
+
+    /*
+     *
+     Jesse Armand:
+     I have to put it here, or else there will be an exception like this:
+    
+     *** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Cannot update for observer <NSKeyValueObservance 0x1159bc80> for the key path "keyboardActiveView.frame" from <UIView 0x996b070>, 
+     most likely because the value for the key "keyboardActiveView" has changed without an appropriate KVO notification being sent. Check the KVO-compliance of the UIView class.'
+     *** First throw call stack:
+     (0x1d34012 0x1171e7e 0x1d33deb 0xbc6494 0xbc4a42 0xb79d60 0x7c64 0xbc3e9c 0x5a93 0xc324f9 0x1d8e0c5 0x1ce8efa 0xb66bb2 0x466af7 0x9a4d847 0x45fe5c 0x100df6 0xf3d66 0xf3f04 0x9a51f28 0x232c7d8 0x4aaa014 0x4a9a7d5 0x1cdaaf5 0x1cd9f44 0x1cd9e1b 0x1c8e7e3 0x1c8e668 0xb5ffc 0x1e15 0x1d15 0x1)
+     libc++abi.dylib: terminate called throwing an exception
+     */
+
+    [RACAble(self.keyboardActiveView.frame) subscribeNext:^(NSValue *frameValue) {
+        if ([frameValue isKindOfClass:[NSValue class]]) {
+            CGRect keyboardEndFrameWindow = [frameValue CGRectValue];
+            if (CGSizeEqualToSize(keyboardEndFrameWindow.size, CGSizeZero))
+                return;
+            
+            CGRect keyboardEndFrameView = [self convertRect:keyboardEndFrameWindow fromView:self.keyboardActiveView.window];
+            if (self.keyboardDidMoveBlock && !self.keyboardActiveView.hidden)
+            {
+                self.keyboardDidMoveBlock(keyboardEndFrameView);
+            }
+        }
+    }];
 }
 
 - (CGRect)keyboardFrameInView
@@ -324,22 +350,6 @@ static char UIViewKeyboardPanRecognizer;
     self.keyboardActiveView.hidden = NO;
     self.keyboardActiveView.userInteractionEnabled = YES;
     self.keyboardActiveView = nil;
-}
-
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                      ofObject:(id)object
-                        change:(NSDictionary *)change
-                       context:(void *)context
-{
-    if([keyPath isEqualToString:@"frame"] && object == self.keyboardActiveView)
-    {
-        CGRect keyboardEndFrameWindow = [[object valueForKeyPath:keyPath] CGRectValue];
-        CGRect keyboardEndFrameView = [self convertRect:keyboardEndFrameWindow fromView:self.keyboardActiveView.window];
-        if (self.keyboardDidMoveBlock && !self.keyboardActiveView.hidden)
-        {
-            self.keyboardDidMoveBlock(keyboardEndFrameView);
-        }
-    }
 }
 
 #pragma mark - Touches Management
@@ -587,16 +597,7 @@ static char UIViewKeyboardPanRecognizer;
 
 - (void)setKeyboardActiveView:(UIView *)keyboardActiveView
 {
-    [self willChangeValueForKey:@"keyboardActiveView"];
-    [self.keyboardActiveView removeObserver:self
-                                 forKeyPath:@"frame"];
-    if (keyboardActiveView)
-    {
-        [keyboardActiveView addObserver:self
-                             forKeyPath:@"frame"
-                                options:0
-                                context:NULL];
-    }
+    [self willChangeValueForKey:@"keyboardActiveView"];    
     objc_setAssociatedObject(self,
                              &UIViewKeyboardActiveView,
                              keyboardActiveView,
